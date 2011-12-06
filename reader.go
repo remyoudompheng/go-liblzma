@@ -9,7 +9,7 @@ import "C"
 import (
 	"io"
 	"math"
-  "os"
+	"os"
 	"unsafe"
 )
 
@@ -72,5 +72,5 @@ func (r *Decompressor) Close() os.Error {
 	if r != nil {
 		C.lzma_end(&r.handle)
 	}
-  return nil
+	return nil
 }
