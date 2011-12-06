@@ -9,7 +9,6 @@ import "C"
 import (
 	"io"
 	"math"
-  "os"
 	"unsafe"
 )
 
@@ -22,7 +21,7 @@ type Decompressor struct {
 
 var _ io.ReadCloser = &Decompressor{}
 
-func NewReader(r io.Reader, bufsize int) (*Decompressor, os.Error) {
+func NewReader(r io.Reader, bufsize int) (*Decompressor, error) {
 	dec := new(Decompressor)
 	// The zero lzma_stream is the same thing as LZMA_STREAM_INIT.
 	dec.rd = r
@@ -38,7 +37,7 @@ func NewReader(r io.Reader, bufsize int) (*Decompressor, os.Error) {
 	return dec, nil
 }
 
-func (r *Decompressor) Read(out []byte) (out_count int, er os.Error) {
+func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 	if r.offset == len(r.buffer) {
 		var n int
 		n, er = r.rd.Read(r.buffer)
@@ -58,7 +57,7 @@ func (r *Decompressor) Read(out []byte) (out_count int, er os.Error) {
 	case Ok:
 		break
 	case StreamEnd:
-		er = os.EOF
+		er = io.EOF
 	default:
 		er = Errno(ret)
 	}
@@ -68,9 +67,9 @@ func (r *Decompressor) Read(out []byte) (out_count int, er os.Error) {
 	return len(out) - int(r.handle.avail_out), er
 }
 
-func (r *Decompressor) Close() os.Error {
+func (r *Decompressor) Close() error {
 	if r != nil {
 		C.lzma_end(&r.handle)
 	}
-  return nil
+	return nil
 }

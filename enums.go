@@ -1,7 +1,5 @@
 package xz
 
-import "os"
-
 type Action uint
 
 const (
@@ -13,7 +11,7 @@ const (
 
 type Errno uint
 
-var _ os.Error = Errno(0)
+var _ error = Errno(0)
 
 const (
 	Ok Errno = iota
@@ -45,6 +43,6 @@ var errorMsg = [...]string{
 	"Programming error",
 }
 
-func (e Errno) String() string {
+func (e Errno) Error() string {
 	return errorMsg[e]
 }
