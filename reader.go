@@ -22,12 +22,12 @@ type Decompressor struct {
 
 var _ io.ReadCloser = &Decompressor{}
 
-func NewReader(r io.Reader, bufsize int) (*Decompressor, os.Error) {
+func NewReader(r io.Reader) (*Decompressor, os.Error) {
 	dec := new(Decompressor)
 	// The zero lzma_stream is the same thing as LZMA_STREAM_INIT.
 	dec.rd = r
-	dec.buffer = make([]byte, bufsize)
-	dec.offset = bufsize
+	dec.buffer = make([]byte, DefaultBufsize)
+	dec.offset = DefaultBufsize
 
 	// Initialize decoder
 	ret := C.lzma_auto_decoder(&dec.handle, math.MaxUint64, 0)
@@ -68,6 +68,8 @@ func (r *Decompressor) Read(out []byte) (out_count int, er os.Error) {
 	return len(out) - int(r.handle.avail_out), er
 }
 
+// Frees any resources allocated by liblzma. It does not close the
+// underlying reader.
 func (r *Decompressor) Close() os.Error {
 	if r != nil {
 		C.lzma_end(&r.handle)
