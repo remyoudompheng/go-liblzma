@@ -11,7 +11,7 @@ func TestDecompress(T *testing.T) {
 		T.Fatalf("could not open test file: %s", er)
 	}
 	defer f.Close()
-	dec, _ := NewReader(f, 4096)
+	dec, _ := NewReader(f)
 	total := 0
 	for {
 		var buf [2048]byte

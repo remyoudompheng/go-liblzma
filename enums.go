@@ -1,5 +1,7 @@
 package xz
 
+const DefaultBufsize = 32768
+
 type Action uint
 
 const (
