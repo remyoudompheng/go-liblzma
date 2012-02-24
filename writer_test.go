@@ -10,7 +10,7 @@ import (
 var digits []byte
 
 func init() {
-	buf := bytes.NewBuffer(nil)
+	buf := new(bytes.Buffer)
 	for i := 0; i < 1e6; i++ {
 		fmt.Fprintf(buf, "%d\n", i)
 	}
@@ -18,8 +18,11 @@ func init() {
 }
 
 func TestCompress(T *testing.T) {
+	if testing.Short() {
+		digits = digits[:int(1e5)]
+	}
 	inbuf := bytes.NewBuffer(digits)
-	outbuf := bytes.NewBuffer(nil)
+	outbuf := new(bytes.Buffer)
 
 	enc, _ := NewWriter(outbuf, LevelDefault)
 	io.Copy(enc, inbuf)
@@ -29,9 +32,12 @@ func TestCompress(T *testing.T) {
 }
 
 func TestIdentity(T *testing.T) {
+	if testing.Short() {
+		digits = digits[:int(1e5)]
+	}
 	inbuf := bytes.NewBuffer(digits)
-	tempbuf := bytes.NewBuffer(nil)
-	outbuf := bytes.NewBuffer(nil)
+	tempbuf := new(bytes.Buffer)
+	outbuf := new(bytes.Buffer)
 
 	enc, _ := NewWriter(tempbuf, LevelDefault)
 	io.Copy(enc, inbuf)
@@ -52,7 +58,7 @@ func benchmarkCompress(B *testing.B, preset Preset) {
 
 	for i := 0; i < B.N; i++ {
 		inbuf := bytes.NewBuffer(digits)
-		outbuf := bytes.NewBuffer(nil)
+		outbuf := new(bytes.Buffer)
 		enc, _ := NewWriter(outbuf, preset)
 		io.Copy(enc, inbuf)
 		enc.Close()
@@ -77,11 +83,9 @@ func BenchmarkCompressSmallBufferLvl3(B *testing.B) {
 
 	for i := 0; i < B.N; i++ {
 		inbuf := bytes.NewBuffer(digits)
-		outbuf := bytes.NewBuffer(nil)
+		outbuf := new(bytes.Buffer)
 		enc, _ := NewWriterCustom(outbuf, Level3, CheckCRC64, 4096)
 		io.Copy(enc, inbuf)
 		enc.Close()
 	}
 }
-
-

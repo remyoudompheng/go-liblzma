@@ -30,7 +30,7 @@ func TestDecompress(T *testing.T) {
 func TestDecompressSmall(t *testing.T) {
 	f, _ := os.Open("testdata/go_spec.html.xz")
 	dec, _ := NewReader(f)
-	buf := bytes.NewBuffer(nil)
+	buf := new(bytes.Buffer)
 	io.Copy(buf, dec)
 	contents := buf.Bytes()
 	f.Close()
