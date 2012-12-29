@@ -56,31 +56,29 @@ func NewWriterCustom(w io.Writer, preset Preset, check Checksum, bufsize int) (*
 }
 
 func (enc *Compressor) Write(in []byte) (n int, er error) {
-	enc.handle.next_in = (*C.uint8_t)(unsafe.Pointer(&in[0]))
-	enc.handle.avail_in = C.size_t(len(in))
+	for n < len(in) {
+		enc.handle.next_in = (*C.uint8_t)(unsafe.Pointer(&in[n]))
+		enc.handle.avail_in = C.size_t(len(in) - n)
+		enc.handle.next_out = (*C.uint8_t)(unsafe.Pointer(&enc.buffer[0]))
+		enc.handle.avail_out = C.size_t(len(enc.buffer))
 
-	enc.handle.next_out = (*C.uint8_t)(unsafe.Pointer(&enc.buffer[0]))
-	enc.handle.avail_out = C.size_t(len(enc.buffer))
+		ret := C.lzma_code(&enc.handle, C.lzma_action(Run))
+		switch Errno(ret) {
+		case Ok:
+			break
+		default:
+			er = Errno(ret)
+		}
 
-	ret := C.lzma_code(&enc.handle, C.lzma_action(Run))
-	switch Errno(ret) {
-	case Ok:
-		break
-	default:
-		er = Errno(ret)
+		n = len(in) - int(enc.handle.avail_in)
+		// Write back result.
+		produced := len(enc.buffer) - int(enc.handle.avail_out)
+		_, er = enc.writer.Write(enc.buffer[:produced])
+		if er != nil {
+			// Short write.
+			return
+		}
 	}
-
-	n = len(in) - int(enc.handle.avail_in)
-
-	// Write back result.
-	produced := len(enc.buffer) - int(enc.handle.avail_out)
-	to_write := bytes.NewBuffer(enc.buffer[:produced])
-	_, er = io.Copy(enc.writer, to_write)
-	if er != nil {
-		// Short write.
-		return
-	}
-
 	return
 }
 

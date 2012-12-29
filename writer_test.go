@@ -7,11 +7,13 @@ package xz
 import (
 	"bytes"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"testing"
 )
 
 var digits []byte
+
+const shortSize = int(1e5)
 
 func init() {
 	buf := new(bytes.Buffer)
@@ -22,36 +24,43 @@ func init() {
 }
 
 func TestCompress(T *testing.T) {
+	d := digits
 	if testing.Short() {
-		digits = digits[:int(1e5)]
+		d = d[:shortSize]
 	}
-	inbuf := bytes.NewBuffer(digits)
 	outbuf := new(bytes.Buffer)
 
-	enc, _ := NewWriter(outbuf, LevelDefault)
-	io.Copy(enc, inbuf)
+	enc, err := NewWriter(outbuf, LevelDefault)
+	_, err = enc.Write(d)
+	if err != nil {
+		T.Fatal(err)
+	}
 	enc.Close()
 
-	T.Logf("%d bytes written (compressed size: %d bytes)", len(digits), len(outbuf.Bytes()))
+	T.Logf("%d bytes written (compressed size: %d bytes)", len(d), outbuf.Len())
 }
 
 func TestIdentity(T *testing.T) {
+	d := digits
 	if testing.Short() {
-		digits = digits[:int(1e5)]
+		d = d[:shortSize]
 	}
-	inbuf := bytes.NewBuffer(digits)
 	tempbuf := new(bytes.Buffer)
-	outbuf := new(bytes.Buffer)
 
-	enc, _ := NewWriter(tempbuf, LevelDefault)
-	io.Copy(enc, inbuf)
+	enc, err := NewWriter(tempbuf, LevelDefault)
+	_, err = enc.Write(d)
+	if err != nil {
+		T.Fatal(err)
+	}
 	enc.Close()
 
 	dec, _ := NewReader(tempbuf)
-	io.Copy(outbuf, dec)
+	out, err := ioutil.ReadAll(dec)
 	dec.Close()
-
-	if !bytes.Equal(digits, outbuf.Bytes()) {
+	if err != nil {
+		T.Fatalf("read error: %s", err)
+	}
+	if !bytes.Equal(d, out) {
 		T.Fatalf("decompressed data not equal to input")
 	}
 }
@@ -61,10 +70,12 @@ func benchmarkCompress(B *testing.B, preset Preset) {
 	B.SetBytes(int64(len(digits)))
 
 	for i := 0; i < B.N; i++ {
-		inbuf := bytes.NewBuffer(digits)
 		outbuf := new(bytes.Buffer)
 		enc, _ := NewWriter(outbuf, preset)
-		io.Copy(enc, inbuf)
+		_, err := enc.Write(digits)
+		if err != nil {
+			B.Fatal(err)
+		}
 		enc.Close()
 	}
 }
@@ -86,10 +97,12 @@ func BenchmarkCompressSmallBufferLvl3(B *testing.B) {
 	B.SetBytes(int64(len(digits)))
 
 	for i := 0; i < B.N; i++ {
-		inbuf := bytes.NewBuffer(digits)
 		outbuf := new(bytes.Buffer)
 		enc, _ := NewWriterCustom(outbuf, Level3, CheckCRC64, 4096)
-		io.Copy(enc, inbuf)
+		_, err := enc.Write(digits)
+		if err != nil {
+			B.Fatal(err)
+		}
 		enc.Close()
 	}
 }
