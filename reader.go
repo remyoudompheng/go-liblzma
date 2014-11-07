@@ -33,7 +33,7 @@ func NewReader(r io.Reader) (*Decompressor, error) {
 	dec.offset = DefaultBufsize
 
 	// Initialize decoder
-	ret := C.lzma_auto_decoder(&dec.handle, math.MaxUint64, 0)
+	ret := C.lzma_auto_decoder(&dec.handle, math.MaxUint64, C.uint32_t(Concatenated))
 	if Errno(ret) != Ok {
 		return nil, Errno(ret)
 	}
@@ -53,10 +53,15 @@ func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 		r.handle.avail_in = C.size_t(n)
 	}
 
+	action := Run
+	if r.handle.avail_in == 0 {
+		action = Finish
+	}
+
 	r.handle.next_out = (*C.uint8_t)(unsafe.Pointer(&out[0]))
 	r.handle.avail_out = C.size_t(len(out))
 
-	ret := C.lzma_code(&r.handle, C.lzma_action(Run))
+	ret := C.lzma_code(&r.handle, C.lzma_action(action))
 	switch Errno(ret) {
 	case Ok:
 		break

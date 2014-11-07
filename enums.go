@@ -102,3 +102,20 @@ const (
 	// Mask for preset level. To AND with a Preset to extract the level.
 	LevelMask Preset = 0x1f
 )
+
+// Flags passed to liblzma stream decoder constructors.
+// See liblzma/src/liblzma/api/lzma/container.h.
+type DecoderFlags uint32
+
+const (
+	// Return NoCheck if the input stream has no integrity check.
+	TellNoCheck DecoderFlags = 1
+	// Return UnsupportedCheck if the type of the input stream's integrity check
+	// is not supported by this version of liblzma.
+	TellUnsupportedCheck DecoderFlags = 2
+	// Return GetCheck as soon as the type of the input stream's integrity check
+	// is known.
+	TellAnyCheck DecoderFlags = 4
+	// Enable decoding of concatenated compressed files.
+	Concatenated DecoderFlags = 8
+)
