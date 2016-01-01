@@ -7,9 +7,9 @@ package xz
 /*
 #cgo LDFLAGS: -llzma
 #include <lzma.h>
+#include <stdlib.h>
 */
 import "C"
-
 import (
 	"bytes"
 	"io"
@@ -17,21 +17,26 @@ import (
 )
 
 type Compressor struct {
-	handle C.lzma_stream
+	handle *C.lzma_stream
 	writer io.Writer
 	buffer []byte
 }
 
 var _ io.WriteCloser = &Compressor{}
 
+func allocLzmaStream(t *C.lzma_stream) *C.lzma_stream {
+	return (*C.lzma_stream)(C.calloc(1, (C.size_t)(unsafe.Sizeof(*t))))
+
+}
+
 func NewWriter(w io.Writer, preset Preset) (*Compressor, error) {
 	enc := new(Compressor)
 	// The zero lzma_stream is the same thing as LZMA_STREAM_INIT.
 	enc.writer = w
 	enc.buffer = make([]byte, DefaultBufsize)
-
+	enc.handle = allocLzmaStream(enc.handle)
 	// Initialize encoder
-	ret := C.lzma_easy_encoder(&enc.handle, C.uint32_t(preset), C.lzma_check(CheckCRC64))
+	ret := C.lzma_easy_encoder(enc.handle, C.uint32_t(preset), C.lzma_check(CheckCRC64))
 	if Errno(ret) != Ok {
 		return nil, Errno(ret)
 	}
@@ -45,9 +50,10 @@ func NewWriterCustom(w io.Writer, preset Preset, check Checksum, bufsize int) (*
 	// The zero lzma_stream is the same thing as LZMA_STREAM_INIT.
 	enc.writer = w
 	enc.buffer = make([]byte, bufsize)
+	enc.handle = allocLzmaStream(enc.handle)
 
 	// Initialize encoder
-	ret := C.lzma_easy_encoder(&enc.handle, C.uint32_t(preset), C.lzma_check(check))
+	ret := C.lzma_easy_encoder(enc.handle, C.uint32_t(preset), C.lzma_check(check))
 	if Errno(ret) != Ok {
 		return nil, Errno(ret)
 	}
@@ -62,7 +68,7 @@ func (enc *Compressor) Write(in []byte) (n int, er error) {
 		enc.handle.next_out = (*C.uint8_t)(unsafe.Pointer(&enc.buffer[0]))
 		enc.handle.avail_out = C.size_t(len(enc.buffer))
 
-		ret := C.lzma_code(&enc.handle, C.lzma_action(Run))
+		ret := C.lzma_code(enc.handle, C.lzma_action(Run))
 		switch Errno(ret) {
 		case Ok:
 			break
@@ -88,7 +94,7 @@ func (enc *Compressor) Flush() error {
 	for {
 		enc.handle.next_out = (*C.uint8_t)(unsafe.Pointer(&enc.buffer[0]))
 		enc.handle.avail_out = C.size_t(len(enc.buffer))
-		ret := C.lzma_code(&enc.handle, C.lzma_action(Finish))
+		ret := C.lzma_code(enc.handle, C.lzma_action(Finish))
 
 		// Write back result.
 		produced := len(enc.buffer) - int(enc.handle.avail_out)
@@ -111,7 +117,9 @@ func (enc *Compressor) Flush() error {
 func (enc *Compressor) Close() error {
 	if enc != nil {
 		er := enc.Flush()
-		C.lzma_end(&enc.handle)
+		C.lzma_end(enc.handle)
+		C.free(unsafe.Pointer(enc.handle))
+		enc.handle = nil
 		if er != nil {
 			return er
 		}

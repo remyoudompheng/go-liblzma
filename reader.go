@@ -7,6 +7,7 @@ package xz
 /*
 #cgo LDFLAGS: -llzma
 #include <lzma.h>
+#include <stdlib.h>
 */
 import "C"
 
@@ -17,7 +18,7 @@ import (
 )
 
 type Decompressor struct {
-	handle C.lzma_stream
+	handle *C.lzma_stream
 	rd     io.Reader
 	buffer []byte
 	offset int
@@ -27,13 +28,12 @@ var _ io.ReadCloser = &Decompressor{}
 
 func NewReader(r io.Reader) (*Decompressor, error) {
 	dec := new(Decompressor)
-	// The zero lzma_stream is the same thing as LZMA_STREAM_INIT.
 	dec.rd = r
 	dec.buffer = make([]byte, DefaultBufsize)
 	dec.offset = DefaultBufsize
-
+	dec.handle = allocLzmaStream(dec.handle)
 	// Initialize decoder
-	ret := C.lzma_auto_decoder(&dec.handle, math.MaxUint64, 0)
+	ret := C.lzma_auto_decoder(dec.handle, math.MaxUint64, 0)
 	if Errno(ret) != Ok {
 		return nil, Errno(ret)
 	}
@@ -52,11 +52,9 @@ func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 		r.handle.next_in = (*C.uint8_t)(unsafe.Pointer(&r.buffer[0]))
 		r.handle.avail_in = C.size_t(n)
 	}
-
 	r.handle.next_out = (*C.uint8_t)(unsafe.Pointer(&out[0]))
 	r.handle.avail_out = C.size_t(len(out))
-
-	ret := C.lzma_code(&r.handle, C.lzma_action(Run))
+	ret := C.lzma_code(r.handle, C.lzma_action(Run))
 	switch Errno(ret) {
 	case Ok:
 		break
@@ -75,7 +73,9 @@ func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 // underlying reader.
 func (r *Decompressor) Close() error {
 	if r != nil {
-		C.lzma_end(&r.handle)
+		C.lzma_end(r.handle)
+		C.free(unsafe.Pointer(r.handle))
+		r.handle = nil
 	}
 	return nil
 }
