@@ -9,14 +9,15 @@ package xz
 #include <lzma.h>
 #include <stdlib.h>
 
-int run_lzma_code(
+int go_lzma_code(
     lzma_stream* handle,
     void* next_in,
-    void* next_out
+    void* next_out,
+    lzma_action action
 ) {
     handle->next_in = next_in;
     handle->next_out = next_out;
-    return lzma_code(handle, LZMA_RUN);
+    return lzma_code(handle, action);
 }
 */
 import "C"
@@ -63,10 +64,11 @@ func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 		r.handle.avail_in = C.size_t(n)
 	}
 	r.handle.avail_out = C.size_t(len(out))
-	ret := C.run_lzma_code(
+	ret := C.go_lzma_code(
 		r.handle,
 		unsafe.Pointer(&r.buffer[r.offset]),
 		unsafe.Pointer(&out[0]),
+		C.lzma_action(Run),
 	)
 	r.offset = r.length - int(r.handle.avail_in)
 	switch Errno(ret) {
