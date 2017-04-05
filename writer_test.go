@@ -13,12 +13,12 @@ import (
 
 var digits []byte
 
-const shortSize = int(1e5)
+const shortSize = int(2e6)
 
 func init() {
 	buf := new(bytes.Buffer)
 	for i := 0; i < 1e6; i++ {
-		fmt.Fprintf(buf, "%d\n", i)
+		fmt.Fprintf(buf, "%d\n", i*1234567891)
 	}
 	digits = buf.Bytes()
 }
@@ -53,6 +53,9 @@ func TestIdentity(T *testing.T) {
 		T.Fatal(err)
 	}
 	enc.Close()
+
+	T.Logf("testing %d bytes (compressed size: %d bytes)",
+		len(d), tempbuf.Len())
 
 	dec, _ := NewReader(tempbuf)
 	out, err := ioutil.ReadAll(dec)
