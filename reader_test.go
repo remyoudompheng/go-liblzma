@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"testing/iotest"
 )
 
 const testFile = "testdata/go_spec.html.xz"
@@ -117,5 +118,47 @@ func TestDecompressConcatenated(t *testing.T) {
 	want := append(append([]byte{}, contents...), contents...)
 	if !bytes.Equal(got, want) {
 		t.Fatalf("NewReader(f) => %q\nNewReader(io.MultiReader(f, f)) => %q\nExpected => %q", contents, got, want)
+	}
+}
+
+// This test ensures that Decompressor doesn't lose data when
+// last Read from underlying reader returns both n != 0 and err = io.EOF
+// instead of returning io.EOF only on subsequent calls.
+// Both behaviours are documented as acceptable in io.Reader interface
+// description.
+//
+// Although this seems to never happen with plain files, HTTP bodies from
+// net/http frequently exhibit this behaviour.
+func TestDecompressWithEof(t *testing.T) {
+	b, err := ioutil.ReadFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r1, err := NewReader(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r1.Close()
+
+	r2, err := NewReader(iotest.DataErrReader(bytes.NewReader(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Close()
+
+	contents1, err := ioutil.ReadAll(r1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// force multiple calls to Decompressor.Read after underlying stream EOF
+	contents2, err := ioutil.ReadAll(iotest.OneByteReader(r2))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(contents1, contents2) {
+		t.Fatalf("contents1 (%d bytes) and contents2 (%d bytes) differ!", len(contents1), len(contents2))
 	}
 }
