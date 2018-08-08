@@ -7,6 +7,7 @@ package xz
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 	"testing"
 )
@@ -54,5 +55,23 @@ func TestDecompressSmall(t *testing.T) {
 
 	if !bytes.Equal(contents, contents2) {
 		t.Fatalf("contents (%d bytes) and contents2 (%d bytes) differ!", len(contents), len(contents2))
+	}
+}
+
+func TestDecompressTruncated(t *testing.T) {
+	blob, err := ioutil.ReadFile("testdata/go_spec.html.xz")
+	if err != nil {
+		t.Fatalf("could not open test file: %s", err)
+	}
+
+	dec, err := NewReader(bytes.NewReader(blob[:4096]))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := ioutil.ReadAll(dec)
+	if err == nil {
+		t.Logf(`final data: expects "... </span>", got %q`, data[len(data)-80:])
+		t.Skip("expected an error, didn't got any")
 	}
 }
