@@ -123,7 +123,6 @@ func (enc *Compressor) Flush() error {
 			return nil
 		}
 	}
-	panic("unreachable")
 }
 
 // Frees any resources allocated by liblzma. It does not close the
