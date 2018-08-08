@@ -12,8 +12,10 @@ import (
 	"testing"
 )
 
+const testFile = "testdata/go_spec.html.xz"
+
 func TestDecompress(t *testing.T) {
-	f, er := os.Open("testdata/go_spec.html.xz")
+	f, er := os.Open(testFile)
 	if er != nil {
 		t.Fatalf("could not open test file: %s", er)
 	}
@@ -33,14 +35,14 @@ func TestDecompress(t *testing.T) {
 }
 
 func TestDecompressSmall(t *testing.T) {
-	f, _ := os.Open("testdata/go_spec.html.xz")
+	f, _ := os.Open(testFile)
 	dec, _ := NewReader(f)
 	buf := new(bytes.Buffer)
 	io.Copy(buf, dec)
 	contents := buf.Bytes()
 	f.Close()
 
-	f, _ = os.Open("testdata/go_spec.html.xz")
+	f, _ = os.Open(testFile)
 	dec, _ = NewReader(f)
 	var contents2 []byte
 	for {
@@ -73,5 +75,47 @@ func TestDecompressTruncated(t *testing.T) {
 	if err == nil {
 		t.Logf(`final data: expects "... </span>", got %q`, data[len(data)-80:])
 		t.Skip("expected an error, didn't got any")
+	}
+}
+
+func TestDecompressConcatenated(t *testing.T) {
+	f, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test data file: %s", err)
+	}
+	defer f.Close()
+	dec, err := NewReader(f)
+	if err != nil {
+		t.Fatalf("Failed to open decompressor: %s", err)
+	}
+	defer dec.Close()
+	contents, err := ioutil.ReadAll(dec)
+	if err != nil {
+		t.Fatalf("Failed to decompress test data file: %s", err)
+	}
+
+	f2a, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test data file: %s", err)
+	}
+	defer f2a.Close()
+	f2b, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test data file: %s", err)
+	}
+	defer f2b.Close()
+	dec2, err := NewReader(io.MultiReader(f2a, f2b))
+	if err != nil {
+		t.Fatalf("Failed to open decompressor: %s", err)
+	}
+	defer dec2.Close()
+	got, err := ioutil.ReadAll(dec2)
+	if err != nil {
+		t.Fatalf("Failed to decompress concatenated test data files: %s", err)
+	}
+
+	want := append(append([]byte{}, contents...), contents...)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("NewReader(f) => %q\nNewReader(io.MultiReader(f, f)) => %q\nExpected => %q", contents, got, want)
 	}
 }
