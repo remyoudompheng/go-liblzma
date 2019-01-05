@@ -55,10 +55,10 @@ func NewReader(r io.Reader) (*Decompressor, error) {
 
 func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 	if r.offset >= r.length {
-		var n int
-		n, er = r.rd.Read(r.buffer)
-		if n == 0 {
-			return 0, er
+		n, err := r.rd.Read(r.buffer)
+
+		if err != nil && err != io.EOF {
+			return 0, err
 		}
 		r.offset, r.length = 0, n
 		r.handle.avail_in = C.size_t(n)
@@ -77,7 +77,7 @@ func (r *Decompressor) Read(out []byte) (out_count int, er error) {
 	r.offset = r.length - int(r.handle.avail_in)
 	switch Errno(ret) {
 	case Ok:
-		break
+		er = nil
 	case StreamEnd:
 		er = io.EOF
 	default:
