@@ -7,6 +7,8 @@ package xz
 
 const DefaultBufsize = 32768
 
+const DefaultPartSize = 1024 * 1024 * 4
+
 type Action uint
 
 const (
