@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	xz "github.com/remyoudompheng/go-liblzma"
+	xz "github.com/alpm-mobica/go-liblzma"
 )
 
 func main() {
