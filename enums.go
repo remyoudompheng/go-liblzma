@@ -5,9 +5,9 @@
 // Package go-liblzma is a wrapper for liblzma and XZ file format.
 package xz
 
-const DefaultBufsize = 32768
+const DefaultBufsize = 1024 * 1024
 
-const DefaultPartSize = 1024 * 1024 * 4
+const DefaultPartSize = 1024 * 1024 * 64
 
 type Action uint
 
