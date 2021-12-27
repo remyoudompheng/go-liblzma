@@ -20,7 +20,6 @@ import "C"
 import (
 	"bytes"
 	"io"
-	"math"
 	"runtime"
 	"sync/atomic"
 	"unsafe"
@@ -30,10 +29,15 @@ import (
 
 // CompressorMt is for multi-threaded implementation of lzma wrapper
 type CompressorMt struct {
-	handle []*C.lzma_stream
-	writer io.Writer
-	cores  int
-	preset Preset
+	handle   []*C.lzma_stream
+	writer   io.Writer
+	cores    int
+	preset   Preset
+	checksum Checksum
+	tmpBuf   [][]byte
+	arrays   [][]byte
+	buffers  []*bytes.Buffer
+	partSize int
 }
 
 var _ io.WriteCloser = &CompressorMt{}
@@ -42,15 +46,59 @@ var _ io.WriteCloser = &CompressorMt{}
 func NewWriterMt(w io.Writer, preset Preset) (*CompressorMt, error) {
 
 	enc := new(CompressorMt)
-	enc.cores = runtime.NumCPU()
-	runtime.GOMAXPROCS(enc.cores)
+	enc.cores = runtime.GOMAXPROCS(0)
 	enc.writer = w
 	enc.preset = preset
+	enc.checksum = CheckCRC64
+	enc.partSize = DefaultPartSize
 
 	enc.handle = make([]*C.lzma_stream, enc.cores)
+	enc.tmpBuf = make([][]byte, enc.cores)
+
+	enc.buffers = make([]*bytes.Buffer, enc.cores)
+	enc.arrays = make([][]byte, enc.cores)
 
 	for i := 0; i < enc.cores; i++ {
 		enc.handle[i] = allocLzmaStream(enc.handle[i])
+		enc.tmpBuf[i] = make([]byte, DefaultBufsize)
+		enc.arrays[i] = make([]byte, 0, enc.partSize)
+		enc.buffers[i] = bytes.NewBuffer(enc.arrays[i])
+	}
+
+	return enc, nil
+}
+
+// NewWriterCustomMt Initializes a XZ encoder with additional settings.
+func NewWriterCustomMt(
+	w io.Writer,
+	preset Preset,
+	check Checksum,
+	threadsNum int,
+	bufSize int,
+	partSize int) (*CompressorMt, error) {
+
+	enc := new(CompressorMt)
+	enc.cores = runtime.GOMAXPROCS(0)
+
+	if enc.cores > threadsNum && threadsNum > 0 {
+		enc.cores = threadsNum
+	}
+
+	enc.writer = w
+	enc.preset = preset
+	enc.partSize = partSize
+
+	enc.handle = make([]*C.lzma_stream, enc.cores)
+	enc.tmpBuf = make([][]byte, enc.cores)
+
+	enc.buffers = make([]*bytes.Buffer, enc.cores)
+	enc.arrays = make([][]byte, enc.cores)
+
+	for i := 0; i < enc.cores; i++ {
+		enc.handle[i] = allocLzmaStream(enc.handle[i])
+		enc.tmpBuf[i] = make([]byte, bufSize)
+		enc.arrays[i] = make([]byte, 0, enc.partSize)
+		enc.buffers[i] = bytes.NewBuffer(enc.arrays[i])
 	}
 
 	return enc, nil
@@ -59,14 +107,16 @@ func NewWriterMt(w io.Writer, preset Preset) (*CompressorMt, error) {
 // CompressThread uses lzma instance to compress and finish for each part
 func CompressThread(
 	stream *C.lzma_stream,
-	inBuf *byte,
+	inBuf []byte,
+	inOffset int,
 	inLen int,
 	preset Preset,
+	checksum Checksum,
 	outBuf *bytes.Buffer,
 	localBuffer []byte,
 	outNum *int64) error {
 
-	ret := C.lzma_easy_encoder(stream, C.uint32_t(preset), C.lzma_check(CheckCRC64))
+	ret := C.lzma_easy_encoder(stream, C.uint32_t(preset), C.lzma_check(checksum))
 	if Errno(ret) != Ok {
 		return Errno(ret)
 	}
@@ -80,8 +130,7 @@ func CompressThread(
 
 		ret := C.go_lzma_code(
 			stream,
-			// unsafe.Add(unsafe.Pointer(inBuf), totalCount),
-			unsafe.Pointer(uintptr(unsafe.Pointer(inBuf))+uintptr(totalCount)),
+			unsafe.Pointer(&inBuf[inOffset+totalCount]),
 			unsafe.Pointer(&localBuffer[0]),
 			C.lzma_action(Run),
 		)
@@ -95,7 +144,7 @@ func CompressThread(
 		totalCount = inLen - int(stream.avail_in)
 		produced := len(localBuffer) - int(stream.avail_out)
 		if _, err := outBuf.Write(localBuffer[:produced]); err != nil {
-			return err
+			return Errno(ret)
 		}
 	}
 
@@ -119,7 +168,6 @@ func CompressThread(
 		}
 
 		if Errno(ret) == StreamEnd {
-			C.lzma_end(stream)
 			atomic.AddInt64(outNum, int64(totalCount))
 			return nil
 		}
@@ -130,55 +178,50 @@ func CompressThread(
 // This can be improved by parallelizing file io
 func (enc *CompressorMt) Write(in []byte) (n int, er error) {
 
+	if len(in) <= 0 {
+		return 0, nil
+	}
+
 	threads := new(errgroup.Group)
 
 	var outNum int64
 
-	// reducing allocations
-	tmpBuf := make([][]byte, enc.cores)
-	for idx := range tmpBuf {
-		tmpBuf[idx] = make([]byte, DefaultBufsize)
+	partSize := enc.partSize
+
+	if len(in) < partSize {
+		partSize = len(in)
 	}
 
-	for cycle := 0; cycle < len(in)/DefaultPartSize+1; cycle++ {
+	for partNum := 0; partNum < len(in)/partSize; partNum++ {
 
-		offsetCycle := DefaultPartSize * cycle
+		offsetPart := partSize * partNum
 
-		var lenCycle int
-		if cycle < len(in)/DefaultPartSize {
-			lenCycle = DefaultPartSize
-		} else {
-			lenCycle = len(in) - DefaultPartSize*cycle
+		// last part with uncommon size
+		if partNum == len(in)/partSize-1 {
+			partSize = len(in) - partSize*partNum
 		}
 
-		buffers := make([]bytes.Buffer, enc.cores)
+		for cycle := 0; cycle < enc.cores; cycle++ {
 
-		byteStep := lenCycle / enc.cores
+			offsetCycle := (partSize / enc.cores) * cycle
 
-		for i := 0; i < enc.cores; i++ {
-
-			// reducing allocations, set max possible size
-			buffers[i].Grow(DefaultPartSize)
-
-			var inLen int
-			inOffset := byteStep*i + offsetCycle
-
-			if i < enc.cores-1 {
-				inLen = int(math.Floor(float64(lenCycle) / float64(enc.cores)))
-			} else {
-				inLen = lenCycle - byteStep*i
+			lenCycle := partSize / enc.cores
+			if cycle == enc.cores-1 {
+				lenCycle = partSize - lenCycle*cycle
 			}
 
-			id := i
+			id := cycle
 
 			threads.Go(func() error {
 				return CompressThread(
 					enc.handle[id],
-					&in[inOffset],
-					inLen,
+					in,
+					offsetPart+offsetCycle,
+					lenCycle,
 					enc.preset,
-					&buffers[id],
-					tmpBuf[id],
+					enc.checksum,
+					enc.buffers[id],
+					enc.tmpBuf[id],
 					&outNum)
 			})
 		}
@@ -187,10 +230,11 @@ func (enc *CompressorMt) Write(in []byte) (n int, er error) {
 			return 0, err
 		}
 
-		for _, buffer := range buffers {
+		for idx, buffer := range enc.buffers {
 			if _, err := buffer.WriteTo(enc.writer); err != nil {
 				return 0, err
 			}
+			enc.arrays[idx] = enc.arrays[idx][:0]
 		}
 	}
 
@@ -203,9 +247,13 @@ func (enc *CompressorMt) Write(in []byte) (n int, er error) {
 // underlying reader.
 func (enc *CompressorMt) Close() error {
 	if enc != nil {
-		for idx, stream := range enc.handle {
-			C.free(unsafe.Pointer(stream))
+		for idx := range enc.handle {
+			C.lzma_end(enc.handle[idx])
+			C.free(unsafe.Pointer(enc.handle[idx]))
 			enc.handle[idx] = nil
+			enc.arrays[idx] = nil
+			enc.buffers[idx] = nil
+			enc.tmpBuf[idx] = nil
 		}
 	}
 	return nil
