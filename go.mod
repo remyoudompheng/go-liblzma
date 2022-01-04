@@ -1,2 +1,2 @@
-module github.com/alpm-mobica/go-liblzma
+module github.com/remyoudompheng/go-liblzma
 
