@@ -5,7 +5,7 @@
 package xz
 
 /*
-#cgo LDFLAGS: -llzma
+#cgo LDFLAGS: -llzma -pthread
 #include <lzma.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -67,7 +67,7 @@ type Compressor struct {
 	handle  *C.lzma_stream
 	writer  io.Writer
 	buffer  []byte
-	totalIn int
+	totalIn uint64
 }
 
 var _ io.WriteCloser = &Compressor{}
@@ -124,7 +124,7 @@ func (enc *Compressor) Write(in []byte) (n int, er error) {
 		return 0, nil
 	}
 
-	enc.totalIn += len(in)
+	enc.totalIn += uint64(len(in))
 	partCount := 0
 	offset := 0
 	reloadPtrs := false
@@ -172,7 +172,7 @@ func (enc *Compressor) Write(in []byte) (n int, er error) {
 			enc.handle.avail_out = C.size_t(len(enc.buffer))
 		}
 
-		if enc.handle.total_in == C.ulong(enc.totalIn) {
+		if uint64(enc.handle.total_in) == enc.totalIn {
 			n = len(in)
 			return
 		}
