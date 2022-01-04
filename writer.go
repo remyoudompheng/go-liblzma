@@ -172,7 +172,7 @@ func (enc *Compressor) Write(in []byte) (n int, er error) {
 			enc.handle.avail_out = C.size_t(len(enc.buffer))
 		}
 
-		if enc.handle.total_in == C.size_t(enc.totalIn) {
+		if enc.handle.total_in == C.ulong(enc.totalIn) {
 			n = len(in)
 			return
 		}
